@@ -9,7 +9,7 @@
   <style>
     body { font-family: system-ui, sans-serif; max-width: 600px; margin: 2rem auto; padding: 1rem; color: #111; background-color: #fafafa; }
     .card { background: white; border: 1px solid #eaeaea; padding: 1.5rem; border-radius: 8px; margin-bottom: 1.5rem; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
-    h2 { font-size: 1.25rem; color: #0070f3; margin-top: 0; }
+    h2 { font-size: 1.25rem; color: #0070f3; margin-top: 0; display: flex; justify-content: space-between; align-items: center; }
     h3 { font-size: 1rem; margin-top: 0; border-bottom: 1px solid #eaeaea; padding-bottom: 0.5rem; }
     .flex { display: flex; gap: 10px; }
     input, button { padding: 10px; margin: 5px 0; width: 100%; box-sizing: border-box; border: 1px solid #ccc; border-radius: 5px; }
@@ -17,50 +17,71 @@
     button:hover { background: #333; }
     .btn-danger { background: #ef4444; }
     .btn-danger:hover { background: #dc2626; }
+    .btn-secondary { background: #666; font-size: 0.8rem; padding: 5px 10px; width: auto; margin: 0; }
     ul { list-style: none; padding: 0; margin: 0; }
     li { background: #f9f9f9; padding: 10px; border-radius: 5px; margin-bottom: 8px; font-size: 0.9rem; border-left: 4px solid #0070f3; }
     .caixa { border-left: 4px solid #10b981; font-weight: bold; }
     .chart-container { position: relative; width: 100%; max-width: 320px; margin: 0 auto; height: 280px; text-align: center; }
+    .hidden { display: none !important; }
+    .auth-container { max-width: 400px; margin: 4rem auto; }
+    .user-info { font-size: 0.8rem; color: #666; font-weight: normal; }
   </style>
 </head>
 <body>
 
-  <h2>Rebalanceamento Inteligente</h2>
-  
-  <div class="card">
-    <h3>1. Adicionar Ativo</h3>
-    <div class="flex">
-      <input type="text" id="ticker" placeholder="Ativo (ex: TAEE11)">
+  <!-- TELA DE AUTENTICAÇÃO (LOGIN / REGISTO) -->
+  <div id="authScreen" class="card auth-container">
+    <h2>Entrar na Conta</h2>
+    <p style="font-size: 0.9rem; color: #666;">Aceda à sua carteira privada de rebalanceamento.</p>
+    <input type="email" id="authEmail" placeholder="O seu e-mail">
+    <input type="password" id="authPassword" placeholder="A sua palavra-passe">
+    <button onclick="fazerLogin()">Entrar</button>
+    <button onclick="fazerRegisto()" style="background: #2563eb;">Criar Nova Conta</button>
+    <p id="authMsg" style="font-size: 0.85rem; color: #ef4444; margin-top: 10px; text-align: center;"></p>
+  </div>
+
+  <!-- APLICAÇÃO PRINCIPAL (Oculta até fazer login) -->
+  <div id="appScreen" class="hidden">
+    <h2>
+      Rebalanceamento Inteligente
+      <button class="btn-secondary" onclick="fazerLogout()">Sair da Conta</button>
+    </h2>
+    
+    <div class="card">
+      <h3>1. Adicionar Ativo</h3>
+      <div class="flex">
+        <input type="text" id="ticker" placeholder="Ativo (ex: TAEE11)">
+      </div>
+      <div class="flex">
+        <input type="number" id="qtd" placeholder="Quantidade Atual">
+        <input type="number" id="alvo" placeholder="Meta Alvo (%)">
+      </div>
+      <button id="btnAdicionar" onclick="adicionarAtivo()">+ Inserir na Carteira</button>
     </div>
-    <div class="flex">
-      <input type="number" id="qtd" placeholder="Quantidade Atual">
-      <input type="number" id="alvo" placeholder="Meta Alvo (%)">
+
+    <div class="card">
+      <h3>2. Posição Atual</h3>
+      <ul id="listaCarteira"><em>Nenhum ativo inserido.</em></ul>
+      <button class="btn-danger" onclick="resetarCarteira()">🗑️ Limpar Carteira (Reset)</button>
     </div>
-    <button id="btnAdicionar" onclick="adicionarAtivo()">+ Inserir na Carteira</button>
-  </div>
 
-  <div class="card">
-    <h3>2. Posição Atual</h3>
-    <ul id="listaCarteira"><em>Nenhum ativo inserido.</em></ul>
-    <button class="btn-danger" onclick="resetarCarteira()">🗑️ Limpar Carteira (Reset)</button>
-  </div>
-
-  <div class="card">
-    <h3>3. Distribuição Visual da Carteira</h3>
-    <div class="chart-container" id="chartWrapper">
-      <canvas id="graficoAlocacao"></canvas>
+    <div class="card">
+      <h3>3. Distribuição Visual da Carteira</h3>
+      <div class="chart-container" id="chartWrapper">
+        <canvas id="graficoAlocacao"></canvas>
+      </div>
     </div>
-  </div>
 
-  <div class="card">
-    <h3>4. Aporte e Cálculo</h3>
-    <input type="number" id="aporte" placeholder="Valor do Aporte (R$)">
-    <button onclick="calcular()">Gerar Lista de Compras</button>
-  </div>
+    <div class="card">
+      <h3>4. Aporte e Cálculo</h3>
+      <input type="number" id="aporte" placeholder="Valor do Aporte (R$)">
+      <button onclick="calcular()">Gerar Lista de Compras</button>
+    </div>
 
-  <div class="card">
-    <h3>O que comprar hoje:</h3>
-    <ul id="resultado"><em>Insira os dados e clique em gerar.</em></ul>
+    <div class="card">
+      <h3>O que comprar hoje:</h3>
+      <ul id="resultado"><em>Insira os dados e clique em gerar.</em></ul>
+    </div>
   </div>
 
   <!-- Importação do Supabase -->
@@ -71,21 +92,104 @@
     const supabaseKey = 'sb_publishable_C-OEcjDYq3IepWFPfKUxEg_X2mFau2z';
     const supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
 
+    let usuarioAtual = null;
     let carteiraIdNuvem = null;
     let carteira = [];
     let meuGrafico = null;
 
-    async function carregarCarteiraDaNuvem() {
+    // Verificar se já existe sessão ativa ao carregar a página
+    async function verificarSessao() {
+      const { data: { session } } = await supabaseClient.auth.getSession();
+      if (session) {
+        usuarioAtual = session.user;
+        document.getElementById('authScreen').classList.add('hidden');
+        document.getElementById('appScreen').classList.remove('hidden');
+        inicializarDadosDoUtilizador();
+      }
+    }
+
+    verificarSessao();
+
+    // Funções de Autenticação
+    async function fazerLogin() {
+      const email = document.getElementById('authEmail').value;
+      const password = document.getElementById('authPassword').value;
+      const msg = document.getElementById('authMsg');
+
+      if (!email || !password) {
+        msg.innerText = "Preencha o e-mail e a palavra-passe.";
+        return;
+      }
+
+      const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+      
+      if (error) {
+        msg.innerText = "Erro ao entrar: " + error.message;
+      } else {
+        usuarioAtual = data.user;
+        document.getElementById('authScreen').classList.add('hidden');
+        document.getElementById('appScreen').classList.remove('hidden');
+        inicializarDadosDoUtilizador();
+      }
+    }
+
+    async function fazerRegisto() {
+      const email = document.getElementById('authEmail').value;
+      const password = document.getElementById('authPassword').value;
+      const msg = document.getElementById('authMsg');
+
+      if (!email || !password) {
+        msg.innerText = "Preencha o e-mail e a palavra-passe.";
+        return;
+      }
+
+      const { data, error } = await supabaseClient.auth.signUp({ email, password });
+      
+      if (error) {
+        msg.innerText = "Erro no registo: " + error.message;
+      } else {
+        alert("Conta criada com sucesso! Verifique o seu e-mail (se necessário) ou faça login.");
+      }
+    }
+
+    async function fazerLogout() {
+      await supabaseClient.auth.signOut();
+      window.location.reload();
+    }
+
+    // Inicializa a carteira vinculada ao utilizador logado
+    async function inicializarDadosDoUtilizador() {
       try {
-        const { data, error } = await supabaseClient
+        // Procura se o utilizador já tem uma carteira associada
+        let { data: carteiraData, error } = await supabaseClient
           .from('carteiras')
           .select('id')
-          .limit(1)
+          .eq('user_id', usuarioAtual.id)
           .single();
 
-        if (error) throw error;
-        carteiraIdNuvem = data.id;
-        
+        // Se não tiver carteira, cria uma nova automaticamente para ele
+        if (!carteiraData) {
+          const { data: novaCarteira, error: erroCriacao } = await supabaseClient
+            .from('carteiras')
+            .insert({ user_id: usuarioAtual.id, nome: 'Minha Carteira' })
+            .select('id')
+            .single();
+
+          if (erroCriacao) throw erroCriacao;
+          carteiraIdNuvem = novaCarteira.id;
+        } else {
+          carteiraIdNuvem = carteiraData.id;
+        }
+
+        carregarAtivosDaCarteira();
+
+      } catch (erro) {
+        console.error("Erro ao inicializar dados:", erro.message);
+      }
+    }
+
+    async function carregarAtivosDaCarteira() {
+      try {
         const { data: ativosSalvos, error: erroAtivos } = await supabaseClient
           .from('ativos')
           .select('*')
@@ -93,6 +197,7 @@
 
         if (erroAtivos) throw erroAtivos;
 
+        carteira = [];
         if (ativosSalvos && ativosSalvos.length > 0) {
             document.getElementById('listaCarteira').innerHTML = '<em>Carregando ativos salvos...</em>';
             
@@ -112,17 +217,13 @@
                     console.error(`Erro ao buscar cotação de ${ativo.ticker}`);
                 }
             }
-            atualizarTela();
-        } else {
-            atualizarTela();
         }
+        atualizarTela();
 
       } catch (erro) {
-        console.error("Erro ao ligar ao Supabase:", erro.message);
+        console.error("Erro ao carregar ativos:", erro.message);
       }
     }
-
-    carregarCarteiraDaNuvem();
 
     async function adicionarAtivo() {
       const tickerInput = document.getElementById('ticker');
@@ -237,7 +338,6 @@
         meuGrafico.destroy();
       }
 
-      // Limpa e reconstrói o wrapper com apenas o canvas necessário
       if (labels.length === 0 || dados.every(val => val === 0)) {
         wrapper.innerHTML = '<canvas id="graficoAlocacao"></canvas><p style="color: #666; font-size: 0.85rem; margin-top: 10px;"><em>Adicione quantidades maiores que zero para ver o gráfico.</em></p>';
         return;
