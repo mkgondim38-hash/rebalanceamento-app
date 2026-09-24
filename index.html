@@ -168,6 +168,8 @@
     }
 
     async function carregarCarteirasDoUtilizador() {
+      if (!usuarioAtual) return;
+
       try {
         const { data, error } = await supabaseClient
           .from('carteiras')
@@ -192,6 +194,7 @@
         atualizarSelectCarteiras();
       } catch (erro) {
         console.error("Erro ao carregar carteiras:", erro.message);
+        alert("Erro ao carregar carteiras da nuvem: " + erro.message);
       }
     }
 
@@ -290,7 +293,7 @@
 
     async function adicionarAtivo() {
       if (!carteiraIdNuvem) {
-        return alert("Erro: Nenhuma carteira selecionada. Aguarde carregar ou crie uma nova.");
+        return alert("Erro: Nenhuma carteira selecionada.");
       }
 
       const tickerInput = document.getElementById('ticker');
@@ -325,7 +328,7 @@
                 percentual_alvo: alvo
             });
             
-        if (erroSupabase) throw new Error("Erro ao salvar no banco de dados");
+        if (erroSupabase) throw new Error(erroSupabase.message);
 
         carteira.push({ ticker, preco: precoAtual, quantidade: qtd, percentualAlvo: alvo });
         atualizarTela();
@@ -335,9 +338,7 @@
         document.getElementById('alvo').value = '';
 
       } catch (erro) {
-        alert(erro.message === "Erro ao salvar no banco de dados" 
-            ? "Erro ao salvar na nuvem." 
-            : "Erro ao buscar a cotação. Verifique se o código está correto.");
+        alert("Erro ao adicionar: " + (erro.message || erro));
       } finally {
         btn.innerText = "+ Inserir na Carteira";
         btn.disabled = false;
@@ -368,7 +369,7 @@
 
       } catch (erro) {
         console.error("Erro detalhado:", erro);
-        alert("Erro detalhado ao apagar: " + erro.message);
+        alert("Erro técnico detalhado ao apagar: " + (erro.message || JSON.stringify(erro)));
       }
     }
 
