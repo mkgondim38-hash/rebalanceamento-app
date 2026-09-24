@@ -237,13 +237,12 @@
         meuGrafico.destroy();
       }
 
+      // Limpa e reconstrói o wrapper com apenas o canvas necessário
       if (labels.length === 0 || dados.every(val => val === 0)) {
         wrapper.innerHTML = '<canvas id="graficoAlocacao"></canvas><p style="color: #666; font-size: 0.85rem; margin-top: 10px;"><em>Adicione quantidades maiores que zero para ver o gráfico.</em></p>';
         return;
       } else {
-        if (!document.getElementById('graficoAlocacao')) {
-          wrapper.innerHTML = '<canvas id="graficoAlocacao"></canvas>';
-        }
+        wrapper.innerHTML = '<canvas id="graficoAlocacao"></canvas>';
       }
 
       const ctx = document.getElementById('graficoAlocacao').getContext('2d');
