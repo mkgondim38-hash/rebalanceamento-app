@@ -20,7 +20,7 @@
     ul { list-style: none; padding: 0; margin: 0; }
     li { background: #f9f9f9; padding: 10px; border-radius: 5px; margin-bottom: 8px; font-size: 0.9rem; border-left: 4px solid #0070f3; }
     .caixa { border-left: 4px solid #10b981; font-weight: bold; }
-    .chart-container { position: relative; width: 100%; max-width: 350px; margin: 0 auto; height: 350px; }
+    .chart-container { position: relative; width: 100%; max-width: 320px; margin: 0 auto; height: 280px; text-align: center; }
   </style>
 </head>
 <body>
@@ -47,7 +47,7 @@
 
   <div class="card">
     <h3>3. Distribuição Visual da Carteira</h3>
-    <div class="chart-container">
+    <div class="chart-container" id="chartWrapper">
       <canvas id="graficoAlocacao"></canvas>
     </div>
   </div>
@@ -67,16 +67,14 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   
   <script>
-    // Configuração do Supabase
     const supabaseUrl = 'https://qsflhhdgrchidobqikfs.supabase.co';
     const supabaseKey = 'sb_publishable_C-OEcjDYq3IepWFPfKUxEg_X2mFau2z';
     const supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
 
     let carteiraIdNuvem = null;
     let carteira = [];
-    let meuGrafico = null; // Variável para controlar o gráfico
+    let meuGrafico = null;
 
-    // Busca a carteira na nuvem ao iniciar
     async function carregarCarteiraDaNuvem() {
       try {
         const { data, error } = await supabaseClient
@@ -126,7 +124,6 @@
 
     carregarCarteiraDaNuvem();
 
-    // Adicionar ativo e salvar no banco
     async function adicionarAtivo() {
       const tickerInput = document.getElementById('ticker');
       const ticker = tickerInput.value.toUpperCase();
@@ -179,7 +176,6 @@
       }
     }
 
-    // Limpar carteira
     async function resetarCarteira() {
       if (!confirm("Tem certeza de que deseja apagar todos os ativos da carteira?")) {
         return;
@@ -204,7 +200,6 @@
       }
     }
 
-    // Atualiza a interface visual e redesenha o gráfico
     function atualizarTela() {
       const lista = document.getElementById('listaCarteira');
       lista.innerHTML = '';
@@ -217,30 +212,41 @@
 
       let labels = [];
       let dadosPatrimonio = [];
+      let patrimonioTotal = 0;
 
       carteira.forEach(a => {
         let valorTotalAtivo = a.preco * a.quantidade;
+        patrimonioTotal += valorTotalAtivo;
         lista.innerHTML += `<li><strong>${a.ticker}</strong>: ${a.quantidade} cotas (Alvo: ${a.percentualAlvo}%) - R$ ${valorTotalAtivo.toFixed(2)}</li>`;
         
         labels.push(a.ticker);
         dadosPatrimonio.push(valorTotalAtivo);
       });
 
-      atualizarGrafico(labels, dadosPatrimonio);
+      if (patrimonioTotal === 0) {
+        atualizarGrafico([], []);
+      } else {
+        atualizarGrafico(labels, dadosPatrimonio);
+      }
     }
 
-    // Função para renderizar o Gráfico de Pizza (Chart.js)
     function atualizarGrafico(labels, dados) {
-      const ctx = document.getElementById('graficoAlocacao').getContext('2d');
+      const wrapper = document.getElementById('chartWrapper');
       
       if (meuGrafico) {
-        meuGrafico.destroy(); // Destrói o gráfico anterior para evitar sobreposição
+        meuGrafico.destroy();
       }
 
-      if (labels.length === 0) {
+      if (labels.length === 0 || dados.every(val => val === 0)) {
+        wrapper.innerHTML = '<canvas id="graficoAlocacao"></canvas><p style="color: #666; font-size: 0.85rem; margin-top: 10px;"><em>Adicione quantidades maiores que zero para ver o gráfico.</em></p>';
         return;
+      } else {
+        if (!document.getElementById('graficoAlocacao')) {
+          wrapper.innerHTML = '<canvas id="graficoAlocacao"></canvas>';
+        }
       }
 
+      const ctx = document.getElementById('graficoAlocacao').getContext('2d');
       meuGrafico = new Chart(ctx, {
         type: 'doughnut',
         data: {
@@ -265,7 +271,6 @@
       });
     }
 
-    // Lógica matemática de rebalanceamento
     function calcular() {
       const aporte = parseFloat(document.getElementById('aporte').value);
       if (isNaN(aporte) || carteira.length === 0) {
