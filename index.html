@@ -11,8 +11,8 @@
     .card { background: white; border: 1px solid #eaeaea; padding: 1.5rem; border-radius: 8px; margin-bottom: 1.5rem; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
     h2 { font-size: 1.25rem; color: #0070f3; margin-top: 0; display: flex; justify-content: space-between; align-items: center; }
     h3 { font-size: 1rem; margin-top: 0; border-bottom: 1px solid #eaeaea; padding-bottom: 0.5rem; }
-    .flex { display: flex; gap: 10px; }
-    input, button { padding: 10px; margin: 5px 0; width: 100%; box-sizing: border-box; border: 1px solid #ccc; border-radius: 5px; }
+    .flex { display: flex; gap: 10px; align-items: center; }
+    input, select, button { padding: 10px; margin: 5px 0; width: 100%; box-sizing: border-box; border: 1px solid #ccc; border-radius: 5px; }
     button { background: #000; color: #fff; border: none; cursor: pointer; font-weight: bold; margin-top: 10px; }
     button:hover { background: #333; }
     .btn-danger { background: #ef4444; }
@@ -24,7 +24,6 @@
     .chart-container { position: relative; width: 100%; max-width: 320px; margin: 0 auto; height: 280px; text-align: center; }
     .hidden { display: none !important; }
     .auth-container { max-width: 400px; margin: 4rem auto; }
-    .user-info { font-size: 0.8rem; color: #666; font-weight: normal; }
   </style>
 </head>
 <body>
@@ -32,7 +31,7 @@
   <!-- TELA DE AUTENTICAÇÃO (LOGIN / REGISTO) -->
   <div id="authScreen" class="card auth-container">
     <h2>Entrar na Conta</h2>
-    <p style="font-size: 0.9rem; color: #666;">Aceda à sua carteira privada de rebalanceamento.</p>
+    <p style="font-size: 0.9rem; color: #666;">Aceda às suas carteiras privadas de rebalanceamento.</p>
     <input type="email" id="authEmail" placeholder="O seu e-mail">
     <input type="password" id="authPassword" placeholder="A sua palavra-passe">
     <button onclick="fazerLogin()">Entrar</button>
@@ -40,13 +39,25 @@
     <p id="authMsg" style="font-size: 0.85rem; color: #ef4444; margin-top: 10px; text-align: center;"></p>
   </div>
 
-  <!-- APLICAÇÃO PRINCIPAL (Oculta até fazer login) -->
+  <!-- APLICAÇÃO PRINCIPAL -->
   <div id="appScreen" class="hidden">
     <h2>
       Rebalanceamento Inteligente
-      <button class="btn-secondary" onclick="fazerLogout()">Sair da Conta</button>
+      <button class="btn-secondary" onclick="fazerLogout()">Sair</button>
     </h2>
     
+    <!-- GESTÃO DE MÚLTIPLAS CARTEIRAS -->
+    <div class="card">
+      <h3>Seleccionar Carteira</h3>
+      <div class="flex" style="margin-bottom: 10px;">
+        <select id="selectCarteira" onchange="mudarCarteira()"></select>
+      </div>
+      <div class="flex">
+        <input type="text" id="nomeNovaCarteira" placeholder="Nome da nova carteira (ex: FIIs, Exterior)">
+        <button onclick="criarNovaCarteira()" style="width: auto; padding: 10px 20px; margin: 0;">+ Criar</button>
+      </div>
+    </div>
+
     <div class="card">
       <h3>1. Adicionar Ativo</h3>
       <div class="flex">
@@ -93,24 +104,23 @@
     const supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
 
     let usuarioAtual = null;
+    let carteirasDoUtilizador = [];
     let carteiraIdNuvem = null;
     let carteira = [];
     let meuGrafico = null;
 
-    // Verificar se já existe sessão ativa ao carregar a página
     async function verificarSessao() {
       const { data: { session } } = await supabaseClient.auth.getSession();
       if (session) {
         usuarioAtual = session.user;
         document.getElementById('authScreen').classList.add('hidden');
         document.getElementById('appScreen').classList.remove('hidden');
-        inicializarDadosDoUtilizador();
+        carregarCarteirasDoUtilizador();
       }
     }
 
     verificarSessao();
 
-    // Funções de Autenticação
     async function fazerLogin() {
       const email = document.getElementById('authEmail').value;
       const password = document.getElementById('authPassword').value;
@@ -129,7 +139,7 @@
         usuarioAtual = data.user;
         document.getElementById('authScreen').classList.add('hidden');
         document.getElementById('appScreen').classList.remove('hidden');
-        inicializarDadosDoUtilizador();
+        carregarCarteirasDoUtilizador();
       }
     }
 
@@ -148,7 +158,7 @@
       if (error) {
         msg.innerText = "Erro no registo: " + error.message;
       } else {
-        alert("Conta criada com sucesso! Verifique o seu e-mail (se necessário) ou faça login.");
+        alert("Conta criada com sucesso! Já pode fazer login.");
       }
     }
 
@@ -157,38 +167,90 @@
       window.location.reload();
     }
 
-    // Inicializa a carteira vinculada ao utilizador logado
-    async function inicializarDadosDoUtilizador() {
+    async function carregarCarteirasDoUtilizador() {
       try {
-        // Procura se o utilizador já tem uma carteira associada
-        let { data: carteiraData, error } = await supabaseClient
+        const { data, error } = await supabaseClient
           .from('carteiras')
-          .select('id')
-          .eq('user_id', usuarioAtual.id)
-          .single();
+          .select('*')
+          .eq('user_id', usuarioAtual.id);
 
-        // Se não tiver carteira, cria uma nova automaticamente para ele
-        if (!carteiraData) {
-          const { data: novaCarteira, error: erroCriacao } = await supabaseClient
+        if (error) throw error;
+
+        carteirasDoUtilizador = data || [];
+
+        if (carteirasDoUtilizador.length === 0) {
+          const { data: nova, error: errCriacao } = await supabaseClient
             .from('carteiras')
-            .insert({ user_id: usuarioAtual.id, nome: 'Minha Carteira' })
-            .select('id')
+            .insert({ user_id: usuarioAtual.id, nome: 'Minha Carteira Principal' })
+            .select('*')
             .single();
 
-          if (erroCriacao) throw erroCriacao;
-          carteiraIdNuvem = novaCarteira.id;
-        } else {
-          carteiraIdNuvem = carteiraData.id;
+          if (errCriacao) throw errCriacao;
+          carteirasDoUtilizador.push(nova);
         }
 
-        carregarAtivosDaCarteira();
-
+        atualizarSelectCarteiras();
       } catch (erro) {
-        console.error("Erro ao inicializar dados:", erro.message);
+        console.error("Erro ao carregar carteiras:", erro.message);
       }
     }
 
-    async function carregarAtivosDaCarteira() {
+    function atualizarSelectCarteiras() {
+      const select = document.getElementById('selectCarteira');
+      select.innerHTML = '';
+
+      carteirasDoUtilizador.forEach(c => {
+        let opt = document.createElement('option');
+        opt.value = c.id;
+        opt.textContent = c.nome || 'Carteira sem nome';
+        select.appendChild(opt);
+      });
+
+      if (carteirasDoUtilizador.length > 0) {
+        if (!carteiraIdNuvem || !carteirasDoUtilizador.some(c => c.id === carteiraIdNuvem)) {
+          carteiraIdNuvem = carteirasDoUtilizador[0].id;
+        }
+        select.value = carteiraIdNuvem;
+      }
+
+      carregarAtivosDaCarteiraAtiva();
+    }
+
+    function mudarCarteira() {
+      const select = document.getElementById('selectCarteira');
+      carteiraIdNuvem = select.value;
+      carregarAtivosDaCarteiraAtiva();
+    }
+
+    async function criarNovaCarteira() {
+      const inputNome = document.getElementById('nomeNovaCarteira');
+      let nome = inputNome.value.trim();
+
+      if (!nome) {
+        return alert("Insira um nome para a nova carteira.");
+      }
+
+      try {
+        const { data: nova, error } = await supabaseClient
+          .from('carteiras')
+          .insert({ user_id: usuarioAtual.id, nome: nome })
+          .select('*')
+          .single();
+
+        if (error) throw error;
+
+        carteirasDoUtilizador.push(nova);
+        carteiraIdNuvem = nova.id;
+        inputNome.value = '';
+        atualizarSelectCarteiras();
+      } catch (erro) {
+        alert("Erro ao criar nova carteira: " + erro.message);
+      }
+    }
+
+    async function carregarAtivosDaCarteiraAtiva() {
+      if (!carteiraIdNuvem) return;
+
       try {
         const { data: ativosSalvos, error: erroAtivos } = await supabaseClient
           .from('ativos')
@@ -198,9 +260,10 @@
         if (erroAtivos) throw erroAtivos;
 
         carteira = [];
+        document.getElementById('listaCarteira').innerHTML = '<em>Carregando ativos...</em>';
+        document.getElementById('resultado').innerHTML = '<em>Insira os dados e clique em gerar.</em>';
+
         if (ativosSalvos && ativosSalvos.length > 0) {
-            document.getElementById('listaCarteira').innerHTML = '<em>Carregando ativos salvos...</em>';
-            
             for (let ativo of ativosSalvos) {
                 try {
                     const resposta = await fetch(`https://brapi.dev/api/quote/${ativo.ticker}?token=qFzKVgdGTMcGUFGBiV8Ctf`);
@@ -226,6 +289,10 @@
     }
 
     async function adicionarAtivo() {
+      if (!carteiraIdNuvem) {
+        return alert("Erro: Nenhuma carteira selecionada. Aguarde carregar ou crie uma nova.");
+      }
+
       const tickerInput = document.getElementById('ticker');
       const ticker = tickerInput.value.toUpperCase();
       const qtd = parseInt(document.getElementById('qtd').value);
@@ -278,7 +345,11 @@
     }
 
     async function resetarCarteira() {
-      if (!confirm("Tem certeza de que deseja apagar todos os ativos da carteira?")) {
+      if (!carteiraIdNuvem) {
+        return alert("Erro: ID da carteira não encontrado.");
+      }
+
+      if (!confirm("Tem certeza de que deseja apagar todos os ativos desta carteira?")) {
         return;
       }
 
@@ -296,8 +367,8 @@
         document.getElementById('aporte').value = '';
 
       } catch (erro) {
-        console.error("Erro ao limpar carteira:", erro.message);
-        alert("Erro ao apagar os dados na nuvem.");
+        console.error("Erro detalhado:", erro);
+        alert("Erro detalhado ao apagar: " + erro.message);
       }
     }
 
@@ -306,7 +377,7 @@
       lista.innerHTML = '';
       
       if(carteira.length === 0) {
-          lista.innerHTML = '<em>Nenhum ativo inserido.</em>';
+          lista.innerHTML = '<em>Nenhum ativo inserido nesta carteira.</em>';
           atualizarGrafico([], []);
           return;
       }
