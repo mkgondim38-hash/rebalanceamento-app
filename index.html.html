@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Calculadora de Rebalanceamento Inteligente</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 500px; margin: 2rem auto; padding: 1rem; color: #111; background-color: #fafafa; }
+    .card { background: white; border: 1px solid #eaeaea; padding: 1.5rem; border-radius: 8px; margin-bottom: 1.5rem; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
+    h2 { font-size: 1.25rem; color: #0070f3; margin-top: 0; }
+    h3 { font-size: 1rem; margin-top: 0; border-bottom: 1px solid #eaeaea; padding-bottom: 0.5rem; }
+    .flex { display: flex; gap: 10px; }
+    input, button { padding: 10px; margin: 5px 0; width: 100%; box-sizing: border-box; border: 1px solid #ccc; border-radius: 5px; }
+    button { background: #000; color: #fff; border: none; cursor: pointer; font-weight: bold; margin-top: 10px; }
+    button:hover { background: #333; }
+    .btn-danger { background: #ef4444; }
+    .btn-danger:hover { background: #dc2626; }
+    ul { list-style: none; padding: 0; margin: 0; }
+    li { background: #f9f9f9; padding: 10px; border-radius: 5px; margin-bottom: 8px; font-size: 0.9rem; border-left: 4px solid #0070f3; }
+    .caixa { border-left: 4px solid #10b981; font-weight: bold; }
+  </style>
+</head>
+<body>
+
+  <h2>Rebalanceamento Inteligente</h2>
+  
+  <div class="card">
+    <h3>1. Adicionar Ativo</h3>
+    <div class="flex">
+      <input type="text" id="ticker" placeholder="Ativo (ex: TAEE11)">
+    </div>
+    <div class="flex">
+      <input type="number" id="qtd" placeholder="Quantidade Atual">
+      <input type="number" id="alvo" placeholder="Meta Alvo (%)">
+    </div>
+    <button id="btnAdicionar" onclick="adicionarAtivo()">+ Inserir na Carteira</button>
+  </div>
+
+  <div class="card">
+    <h3>2. Posição Atual</h3>
+    <ul id="listaCarteira"><em>Nenhum ativo inserido.</em></ul>
+    <button class="btn-danger" onclick="resetarCarteira()">🗑️ Limpar Carteira (Reset)</button>
+  </div>
+
+  <div class="card">
+    <h3>3. Aporte e Cálculo</h3>
+    <input type="number" id="aporte" placeholder="Valor do Aporte (R$)">
+    <button onclick="calcular()">Gerar Lista de Compras</button>
+  </div>
+
+  <div class="card">
+    <h3>O que comprar hoje:</h3>
+    <ul id="resultado"><em>Insira os dados e clique em gerar.</em></ul>
+  </div>
+
+  <!-- Importação do Supabase -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  
+  <script>
+    // Configuração única do Supabase
+    const supabaseUrl = 'https://qsflhhdgrchidobqikfs.supabase.co';
+    const supabaseKey = 'sb_publishable_C-OEcjDYq3IepWFPfKUxEg_X2mFau2z';
+    const supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
+
+    let carteiraIdNuvem = null;
+    let carteira = [];
+
+    // Busca a carteira na nuvem ao iniciar
+    async function carregarCarteiraDaNuvem() {
+      try {
+        const { data, error } = await supabaseClient
+          .from('carteiras')
+          .select('id')
+          .limit(1)
+          .single();
+
+        if (error) throw error;
+        carteiraIdNuvem = data.id;
+        
+        const { data: ativosSalvos, error: erroAtivos } = await supabaseClient
+          .from('ativos')
+          .select('*')
+          .eq('carteira_id', carteiraIdNuvem);
+
+        if (erroAtivos) throw erroAtivos;
+
+        if (ativosSalvos && ativosSalvos.length > 0) {
+            document.getElementById('listaCarteira').innerHTML = '<em>Carregando ativos salvos...</em>';
+            
+            for (let ativo of ativosSalvos) {
+                try {
+                    const resposta = await fetch(`https://brapi.dev/api/quote/${ativo.ticker}?token=qFzKVgdGTMcGUFGBiV8Ctf`);
+                    const dados = await resposta.json();
+                    const precoAtual = dados.results[0].regularMarketPrice;
+                    
+                    carteira.push({ 
+                        ticker: ativo.ticker, 
+                        preco: precoAtual, 
+                        quantidade: ativo.quantidade_atual, 
+                        percentualAlvo: ativo.percentual_alvo 
+                    });
+                } catch (e) {
+                    console.error(`Erro ao buscar cotação de ${ativo.ticker}`);
+                }
+            }
+            atualizarTela();
+        } else {
+            atualizarTela();
+        }
+
+      } catch (erro) {
+        console.error("Erro ao ligar ao Supabase:", erro.message);
+      }
+    }
+
+    carregarCarteiraDaNuvem();
+
+    // Função principal para adicionar ativo e salvar no banco
+    async function adicionarAtivo() {
+      const tickerInput = document.getElementById('ticker');
+      const ticker = tickerInput.value.toUpperCase();
+      const qtd = parseInt(document.getElementById('qtd').value);
+      const alvo = parseFloat(document.getElementById('alvo').value);
+      const btn = document.getElementById('btnAdicionar');
+
+      if (!ticker || isNaN(qtd) || isNaN(alvo)) {
+        return alert("Preencha o ticker, a quantidade e a meta.");
+      }
+
+      btn.innerText = "Processando...";
+      btn.disabled = true;
+
+      try {
+        const resposta = await fetch(`https://brapi.dev/api/quote/${ticker}?token=qFzKVgdGTMcGUFGBiV8Ctf`);
+        const dados = await resposta.json();
+
+        if (dados.error || !dados.results || dados.results.length === 0) {
+          throw new Error("Ativo não encontrado");
+        }
+
+        const precoAtual = dados.results[0].regularMarketPrice;
+
+        // Salva na tabela ativos do Supabase
+        const { error: erroSupabase } = await supabaseClient
+            .from('ativos')
+            .insert({
+                carteira_id: carteiraIdNuvem,
+                ticker: ticker,
+                quantidade_atual: qtd,
+                percentual_alvo: alvo
+            });
+            
+        if (erroSupabase) throw new Error("Erro ao salvar no banco de dados");
+
+        carteira.push({ ticker, preco: precoAtual, quantidade: qtd, percentualAlvo: alvo });
+        atualizarTela();
+        
+        tickerInput.value = '';
+        document.getElementById('qtd').value = '';
+        document.getElementById('alvo').value = '';
+
+      } catch (erro) {
+        alert(erro.message === "Erro ao salvar no banco de dados" 
+            ? "Erro ao salvar na nuvem." 
+            : "Erro ao buscar a cotação. Verifique se o código está correto.");
+      } finally {
+        btn.innerText = "+ Inserir na Carteira";
+        btn.disabled = false;
+      }
+    }
+
+    // Função para limpar/resetar a carteira inteira
+    async function resetarCarteira() {
+      if (!confirm("Tem certeza de que deseja apagar todos os ativos da carteira?")) {
+        return;
+      }
+
+      try {
+        // Apaga todos os ativos vinculados a esta carteira no Supabase
+        const { error } = await supabaseClient
+          .from('ativos')
+          .delete()
+          .eq('carteira_id', carteiraIdNuvem);
+
+        if (error) throw error;
+
+        // Limpa a lista local e atualiza a tela
+        carteira = [];
+        atualizarTela();
+        document.getElementById('resultado').innerHTML = '<em>Insira os dados e clique em gerar.</em>';
+        document.getElementById('aporte').value = '';
+
+        alert("Carteira limpa com sucesso!");
+      } catch (erro) {
+        console.error("Erro ao limpar carteira:", erro.message);
+        alert("Erro ao apagar os dados na nuvem.");
+      }
+    }
+
+    // Atualiza a interface visual
+    function atualizarTela() {
+      const lista = document.getElementById('listaCarteira');
+      lista.innerHTML = '';
+      if(carteira.length === 0) {
+          lista.innerHTML = '<em>Nenhum ativo inserido.</em>';
+          return;
+      }
+      carteira.forEach(a => {
+        lista.innerHTML += `<li><strong>${a.ticker}</strong>: ${a.quantidade} cotas (Alvo: ${a.percentualAlvo}%) - Cotado a R$ ${a.preco.toFixed(2)}</li>`;
+      });
+    }
+
+    // Lógica matemática de rebalanceamento
+    function calcular() {
+      const aporte = parseFloat(document.getElementById('aporte').value);
+      if (isNaN(aporte) || carteira.length === 0) {
+        return alert("Insira os ativos e o valor do aporte.");
+      }
+
+      let patrimonioAtual = carteira.reduce((acc, ativo) => acc + (ativo.preco * ativo.quantidade), 0);
+      let patrimonioProjetado = patrimonioAtual + aporte;
+      let caixaRestante = aporte;
+      let recomendacoes = [];
+
+      let analise = carteira.map(ativo => {
+        let valorAtual = ativo.preco * ativo.quantidade;
+        let valorAlvo = patrimonioProjetado * (ativo.percentualAlvo / 100);
+        return { ...ativo, distanciaValor: valorAlvo - valorAtual };
+      });
+
+      analise.sort((a, b) => b.distanciaValor - a.distanciaValor);
+
+      for (let ativo of analise) {
+        if (ativo.distanciaValor > 0 && caixaRestante >= ativo.preco) {
+          let maxCotasPelaDistancia = Math.floor(ativo.distanciaValor / ativo.preco);
+          let maxCotasPeloCaixa = Math.floor(caixaRestante / ativo.preco);
+          let cotasAComprar = Math.min(maxCotasPelaDistancia, maxCotasPeloCaixa);
+
+          if (cotasAComprar > 0) {
+            let totalGasto = cotasAComprar * ativo.preco;
+            recomendacoes.push(`Compre <strong>${cotasAComprar} cotas</strong> de ${ativo.ticker} (R$ ${totalGasto.toFixed(2)})`);
+            caixaRestante -= totalGasto;
+          }
+        }
+      }
+
+      const res = document.getElementById('resultado');
+      if (recomendacoes.length > 0) {
+        res.innerHTML = recomendacoes.map(r => `<li>${r}</li>`).join('');
+        res.innerHTML += `<li class="caixa">Caixa restante: R$ ${caixaRestante.toFixed(2)}</li>`;
+      } else {
+        res.innerHTML = "<li>Seu aporte não é suficiente para comprar 1 cota dos ativos defasados.</li>";
+      }
+    }
+  </script>
+</body>
+</html>
