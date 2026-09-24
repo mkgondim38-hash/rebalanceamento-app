@@ -4,8 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Calculadora de Rebalanceamento Inteligente</title>
+  <!-- Importação do Chart.js para os gráficos -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    body { font-family: system-ui, sans-serif; max-width: 500px; margin: 2rem auto; padding: 1rem; color: #111; background-color: #fafafa; }
+    body { font-family: system-ui, sans-serif; max-width: 600px; margin: 2rem auto; padding: 1rem; color: #111; background-color: #fafafa; }
     .card { background: white; border: 1px solid #eaeaea; padding: 1.5rem; border-radius: 8px; margin-bottom: 1.5rem; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
     h2 { font-size: 1.25rem; color: #0070f3; margin-top: 0; }
     h3 { font-size: 1rem; margin-top: 0; border-bottom: 1px solid #eaeaea; padding-bottom: 0.5rem; }
@@ -18,6 +20,7 @@
     ul { list-style: none; padding: 0; margin: 0; }
     li { background: #f9f9f9; padding: 10px; border-radius: 5px; margin-bottom: 8px; font-size: 0.9rem; border-left: 4px solid #0070f3; }
     .caixa { border-left: 4px solid #10b981; font-weight: bold; }
+    .chart-container { position: relative; width: 100%; max-width: 350px; margin: 0 auto; height: 350px; }
   </style>
 </head>
 <body>
@@ -43,7 +46,14 @@
   </div>
 
   <div class="card">
-    <h3>3. Aporte e Cálculo</h3>
+    <h3>3. Distribuição Visual da Carteira</h3>
+    <div class="chart-container">
+      <canvas id="graficoAlocacao"></canvas>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>4. Aporte e Cálculo</h3>
     <input type="number" id="aporte" placeholder="Valor do Aporte (R$)">
     <button onclick="calcular()">Gerar Lista de Compras</button>
   </div>
@@ -57,13 +67,14 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   
   <script>
-    // Configuração única do Supabase
+    // Configuração do Supabase
     const supabaseUrl = 'https://qsflhhdgrchidobqikfs.supabase.co';
     const supabaseKey = 'sb_publishable_C-OEcjDYq3IepWFPfKUxEg_X2mFau2z';
     const supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
 
     let carteiraIdNuvem = null;
     let carteira = [];
+    let meuGrafico = null; // Variável para controlar o gráfico
 
     // Busca a carteira na nuvem ao iniciar
     async function carregarCarteiraDaNuvem() {
@@ -115,7 +126,7 @@
 
     carregarCarteiraDaNuvem();
 
-    // Função principal para adicionar ativo e salvar no banco
+    // Adicionar ativo e salvar no banco
     async function adicionarAtivo() {
       const tickerInput = document.getElementById('ticker');
       const ticker = tickerInput.value.toUpperCase();
@@ -140,7 +151,6 @@
 
         const precoAtual = dados.results[0].regularMarketPrice;
 
-        // Salva na tabela ativos do Supabase
         const { error: erroSupabase } = await supabaseClient
             .from('ativos')
             .insert({
@@ -169,14 +179,13 @@
       }
     }
 
-    // Função para limpar/resetar a carteira inteira
+    // Limpar carteira
     async function resetarCarteira() {
       if (!confirm("Tem certeza de que deseja apagar todos os ativos da carteira?")) {
         return;
       }
 
       try {
-        // Apaga todos os ativos vinculados a esta carteira no Supabase
         const { error } = await supabaseClient
           .from('ativos')
           .delete()
@@ -184,29 +193,75 @@
 
         if (error) throw error;
 
-        // Limpa a lista local e atualiza a tela
         carteira = [];
         atualizarTela();
         document.getElementById('resultado').innerHTML = '<em>Insira os dados e clique em gerar.</em>';
         document.getElementById('aporte').value = '';
 
-        alert("Carteira limpa com sucesso!");
       } catch (erro) {
         console.error("Erro ao limpar carteira:", erro.message);
         alert("Erro ao apagar os dados na nuvem.");
       }
     }
 
-    // Atualiza a interface visual
+    // Atualiza a interface visual e redesenha o gráfico
     function atualizarTela() {
       const lista = document.getElementById('listaCarteira');
       lista.innerHTML = '';
+      
       if(carteira.length === 0) {
           lista.innerHTML = '<em>Nenhum ativo inserido.</em>';
+          atualizarGrafico([], []);
           return;
       }
+
+      let labels = [];
+      let dadosPatrimonio = [];
+
       carteira.forEach(a => {
-        lista.innerHTML += `<li><strong>${a.ticker}</strong>: ${a.quantidade} cotas (Alvo: ${a.percentualAlvo}%) - Cotado a R$ ${a.preco.toFixed(2)}</li>`;
+        let valorTotalAtivo = a.preco * a.quantidade;
+        lista.innerHTML += `<li><strong>${a.ticker}</strong>: ${a.quantidade} cotas (Alvo: ${a.percentualAlvo}%) - R$ ${valorTotalAtivo.toFixed(2)}</li>`;
+        
+        labels.push(a.ticker);
+        dadosPatrimonio.push(valorTotalAtivo);
+      });
+
+      atualizarGrafico(labels, dadosPatrimonio);
+    }
+
+    // Função para renderizar o Gráfico de Pizza (Chart.js)
+    function atualizarGrafico(labels, dados) {
+      const ctx = document.getElementById('graficoAlocacao').getContext('2d');
+      
+      if (meuGrafico) {
+        meuGrafico.destroy(); // Destrói o gráfico anterior para evitar sobreposição
+      }
+
+      if (labels.length === 0) {
+        return;
+      }
+
+      meuGrafico = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: labels,
+          datasets: [{
+            data: dados,
+            backgroundColor: [
+              '#0070f3', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#3b82f6'
+            ],
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              position: 'bottom'
+            }
+          }
+        }
       });
     }
 
