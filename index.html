@@ -113,6 +113,7 @@
     let carteiraIdNuvem = null;
     let carteira = [];
     let meuGrafico = null;
+    let planoUsuario = "free";
 
     async function verificarSessao() {
       const { data: { session } } = await supabaseClient.auth.getSession();
@@ -120,11 +121,29 @@
         usuarioAtual = session.user;
         document.getElementById('authScreen').classList.add('hidden');
         document.getElementById('appScreen').classList.remove('hidden');
+        await carregarPlanoDoUsuario();
         carregarCarteirasDoUtilizador();
       }
     }
 
     verificarSessao();
+
+    async function carregarPlanoDoUsuario() {
+      if (!usuarioAtual) return;
+      try {
+        const { data, error } = await supabaseClient
+          .from('profiles')
+          .select('plano')
+          .eq('id', usuarioAtual.id)
+          .single();
+        
+        if (data) {
+          planoUsuario = data.plano || "free";
+        }
+      } catch (e) {
+        console.error("Erro ao carregar plano:", e);
+      }
+    }
 
     async function fazerLogin() {
       const email = document.getElementById('authEmail').value;
@@ -144,6 +163,7 @@
         usuarioAtual = data.user;
         document.getElementById('authScreen').classList.add('hidden');
         document.getElementById('appScreen').classList.remove('hidden');
+        await carregarPlanoDoUsuario();
         carregarCarteirasDoUtilizador();
       }
     }
@@ -296,13 +316,15 @@
       }
     }
 
-    // Função de verificação do plano Free
+    // Validação do Plano Freemium com verificação na nuvem
     function verificarLimiteFreemium() {
-        const PLANO_DO_USUARIO = "free"; // No futuro, vamos buscar isto dinamicamente do Supabase
         const LIMITE_ATIVOS_FREE = 5;
 
-        if (PLANO_DO_USUARIO === "free" && carteira.length >= LIMITE_ATIVOS_FREE) {
-            alert("🔒 Atingiu o limite de 5 ativos do Plano Gratuito! Faça upgrade para o Plano Pro para desbloquear ativos ilimitados.");
+        if (planoUsuario === "free" && carteira.length >= LIMITE_ATIVOS_FREE) {
+            if (confirm("🔒 Atingiu o limite de 5 ativos do Plano Gratuito!\n\nDeseja fazer o upgrade para o Plano Pro (Ativos ilimitados e carteiras múltiplas)?")) {
+                // Aqui pode colocar o link de pagamento Pix (ex: Mercado Pago, Stripe ou Pix direto)
+                window.open("https://www.mercadopago.com.br", "_blank");
+            }
             return false;
         }
         return true;
